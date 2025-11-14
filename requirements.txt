@@ -1,0 +1,4 @@
+flask
+pymongo
+sentence-transformers
+torch

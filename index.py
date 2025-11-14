@@ -1,33 +1,41 @@
-from pymongo import MongoClient
-from sentence_transformers import SentenceTransformer, util
-import torch
+from dotenv import load_dotenv
+import os
+from pymongo.mongo_client import MongoClient
+from pymongo.server_api import ServerApi
+from sentence_transformers import SentenceTransformer
+
+load_dotenv()
+
+username = os.getenv("MONGO_USER")
+password = os.getenv("MONGO_PASS")
+
+uri = f"mongodb+srv://{username}:{password}@cluster0.aitteib.mongodb.net/?appName=Cluster0"
+client = MongoClient(uri, server_api=ServerApi('1'))
+
+db = client["vector_db"]
+col = db["products"]
 
 model = SentenceTransformer("intfloat/multilingual-e5-base")
 
-mongo = MongoClient("")
-db = mongo[""]
-col = db[""]
+sample = col.find_one({}, {"embedding": 1})
+embed = model.encode("คีร์ร์บอร์ด", convert_to_tensor=False).tolist()
 
-def addEmbedding(modelV):
-    products = list(col.find({"embedding": {"$exists": False}}))
-    for p in products:
-        emb = modelV.encode(p["productName"], convert_to_tensor=True).tolist()
-        col.update_one({"_id": p["_id"]}, {"$set": {"embedding": emb}})
-    print(f"✅ add embedding {len(products)} success")
-# addEmbedding(model)
+pipeline = [
+    {
+        "$vectorSearch": {
+            "index": "vector_index",
+            "path": "embedding",
+            "queryVector": embed,
+            "numCandidates": 100,
+            "limit": 5
+        }
+    }
+]
 
-def search_products(query, limit=5):
-    q_emb = model.encode(query, convert_to_tensor=True)
-    all_products = list(col.find({}, {"productName": 1, "embedding": 1, "price": 1}))
-    results = []
+results = list(col.aggregate(pipeline))
 
-    for p in all_products:
-        emb = torch.tensor(p["embedding"])
-        score = util.cos_sim(q_emb, emb).item()
-        results.append((score, p))
+for r in results:
+    name = r.get("productName", "N/A")
+    link = r.get("productLink", "N/A")
+    print(name,link)
 
-    results.sort(reverse=True, key=lambda x: x[0])
-    return results[:limit]
-
-for score, product in search_products("keyboard"):
-    print(f"{score:.3f} | {product['productName']} - {product['price']}")
